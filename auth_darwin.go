@@ -23,13 +23,14 @@ package main
 
 // goPickResult is set by the button targets and read by C after
 // runModalForWindow returns.
-//   0 = cancelled, 1 = OIDC, 2 = OpenPubkey.
+//   0 = cancelled, 1 = OIDC, 2 = OpenPubkey, 3 = Keypair (dev).
 static int g_pickResult = 0;
 
 @interface WeftPickerTarget : NSObject
 @property (assign) NSWindow *win;
 - (void)pickOIDC:(id)sender;
 - (void)pickOpenPubkey:(id)sender;
+- (void)pickKeypair:(id)sender;
 @end
 
 @implementation WeftPickerTarget
@@ -43,18 +44,28 @@ static int g_pickResult = 0;
     [NSApp stopModalWithCode:NSModalResponseOK];
     [self.win orderOut:nil];
 }
+- (void)pickKeypair:(id)sender {
+    g_pickResult = 3;
+    [NSApp stopModalWithCode:NSModalResponseOK];
+    [self.win orderOut:nil];
+}
 @end
 
-// runPicker creates the NSWindow, populates the two buttons, runs the
-// modal loop, and returns the picked code. Blocks the calling thread —
-// caller must invoke from the main thread.
-static int runPicker(void) {
+// runPicker creates the NSWindow, populates the auth-method buttons,
+// runs the modal loop, and returns the picked code. offerKeypair = 1
+// adds the 3rd "Sign in with local key (dev)" button under the
+// OpenPubkey / OIDC pair. Blocks the calling thread — caller must
+// invoke from the main thread.
+static int runPicker(int offerKeypair) {
     g_pickResult = 0;
     [[NSApplication sharedApplication]
         setActivationPolicy:NSApplicationActivationPolicyRegular];
     [NSApp activateIgnoringOtherApps:YES];
 
-    NSRect frame = NSMakeRect(0, 0, 440, 200);
+    // Window grows vertically when the 3rd button is shown so the dev
+    // affordance has room without overlapping the prompt.
+    CGFloat winHeight = offerKeypair ? 260 : 200;
+    NSRect frame = NSMakeRect(0, 0, 440, winHeight);
     NSWindow *win = [[NSWindow alloc]
         initWithContentRect:frame
                   styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable)
@@ -63,7 +74,7 @@ static int runPicker(void) {
     [win setTitle:@"Sign in to Weft"];
     [win setReleasedWhenClosed:NO];
 
-    NSTextField *label = [[NSTextField alloc] initWithFrame:NSMakeRect(20, 130, 400, 40)];
+    NSTextField *label = [[NSTextField alloc] initWithFrame:NSMakeRect(20, winHeight - 70, 400, 40)];
     [label setStringValue:@"Choose how to sign in to your Weft cluster."];
     [label setBezeled:NO];
     [label setDrawsBackground:NO];
@@ -74,20 +85,31 @@ static int runPicker(void) {
     WeftPickerTarget *target = [[WeftPickerTarget alloc] init];
     target.win = win;
 
-    NSButton *b1 = [[NSButton alloc] initWithFrame:NSMakeRect(20, 60, 200, 40)];
+    CGFloat row1Y = offerKeypair ? 120 : 60;
+
+    NSButton *b1 = [[NSButton alloc] initWithFrame:NSMakeRect(20, row1Y, 200, 40)];
     [b1 setTitle:@"Sign in with OpenPubkey"];
     [b1 setBezelStyle:NSBezelStyleRounded];
     [b1 setTarget:target];
     [b1 setAction:@selector(pickOpenPubkey:)];
     [[win contentView] addSubview:b1];
 
-    NSButton *b2 = [[NSButton alloc] initWithFrame:NSMakeRect(230, 60, 190, 40)];
+    NSButton *b2 = [[NSButton alloc] initWithFrame:NSMakeRect(230, row1Y, 190, 40)];
     [b2 setTitle:@"Sign in with OIDC"];
     [b2 setBezelStyle:NSBezelStyleRounded];
     [b2 setKeyEquivalent:@"\r"];
     [b2 setTarget:target];
     [b2 setAction:@selector(pickOIDC:)];
     [[win contentView] addSubview:b2];
+
+    if (offerKeypair) {
+        NSButton *b3 = [[NSButton alloc] initWithFrame:NSMakeRect(20, 50, 400, 40)];
+        [b3 setTitle:@"Sign in with local key (dev)"];
+        [b3 setBezelStyle:NSBezelStyleRounded];
+        [b3 setTarget:target];
+        [b3 setAction:@selector(pickKeypair:)];
+        [[win contentView] addSubview:b3];
+    }
 
     [win center];
     [win makeKeyAndOrderFront:nil];
@@ -189,7 +211,7 @@ type cocoaPicker struct{}
 // never enter runModalForWindow while another modal is already up.
 var pickerMu sync.Mutex
 
-func (cocoaPicker) Pick(ctx context.Context) AuthChoice {
+func (cocoaPicker) Pick(ctx context.Context, offerKeypair bool) AuthChoice {
 	pickerMu.Lock()
 	defer pickerMu.Unlock()
 
@@ -208,11 +230,17 @@ func (cocoaPicker) Pick(ctx context.Context) AuthChoice {
 		done <- ChoiceCancelled
 	}()
 
-	switch int(C.runPicker()) {
+	cOffer := C.int(0)
+	if offerKeypair {
+		cOffer = 1
+	}
+	switch int(C.runPicker(cOffer)) {
 	case 1:
 		return ChoiceOIDC
 	case 2:
 		return ChoiceOpenPubkey
+	case 3:
+		return ChoiceKeypair
 	default:
 		return ChoiceCancelled
 	}

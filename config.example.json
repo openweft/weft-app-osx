@@ -6,11 +6,14 @@
   "interval": "3s",
 
   "_auth_comment": "OPTIONAL : omit the whole `auth` block to skip the sign-in window (preserves the dev / SSH-tunnel-only flow). When present, the app shows a 2-button picker (OpenPubkey / OIDC) before bringing up the tray, caches the resulting session token in macOS Keychain, and stamps Bearer on every WebView API call.",
+  "_auth_keypair_comment": "OPTIONAL dev-only third auth method. Set `keypair_fallback: true` AND `gateway` to add a 3rd button (Sign in with local key (dev)) to the picker. On click, the app loads (or generates + persists) an ed25519 private key in macOS Keychain (service=weft-app-keypair), signs a 60-second assertion bound to gateway/api/auth/keypair, and POSTs it ; the server returns a session id_token if the matching public key is in its --keypair-allowlist file. Register your pubkey by running `weft-app-osx --print-pubkey` and pasting the output into the server's allowlist (entries[].pubkey). NEVER enable this against an Internet-facing production cluster — the server-side flag should also be unset there.",
   "auth": {
     "issuer": "https://dex.weft.local/dex",
     "client_id": "weft-app-osx",
     "scopes": ["openid", "profile", "email", "groups"],
-    "redirect_uri": "http://127.0.0.1:43219/callback"
+    "redirect_uri": "http://127.0.0.1:43219/callback",
+    "keypair_fallback": false,
+    "gateway": "https://weft.local:8080"
   },
 
   "clusters": [

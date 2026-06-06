@@ -44,6 +44,18 @@ type AuthConfig struct {
 	// KeychainAccount overrides the per-issuer Keychain account label.
 	// Defaults to the issuer URL.
 	KeychainAccount string `json:"keychain_account,omitempty"`
+	// KeypairFallback enables the ed25519 keypair fallback flow used in
+	// dev against a live cluster when dex / OIDC isn't ready yet. When
+	// true, the picker grows a 3rd button ("Sign in with local key
+	// (dev)") ; the button-click loads (or generates) an ed25519
+	// private key from Keychain, signs an assertion, and POSTs it to
+	// <Gateway>/api/auth/keypair which returns an id_token. Off by
+	// default — production builds should never flip this.
+	KeypairFallback bool `json:"keypair_fallback,omitempty"`
+	// Gateway is the cluster origin (scheme://host[:port]) the keypair
+	// assertion is POSTed to. Empty + KeypairFallback=true is a
+	// configuration error caught at flow start.
+	Gateway string `json:"gateway,omitempty"`
 }
 
 // Enabled reports whether the user actually configured auth.
@@ -55,6 +67,9 @@ type TokenKind string
 const (
 	TokenOIDC       TokenKind = "oidc"
 	TokenOpenPubkey TokenKind = "openpubkey"
+	// TokenKindKeypair tags a session token minted by the dev
+	// ed25519-keypair fallback at <gateway>/api/auth/keypair.
+	TokenKindKeypair TokenKind = "keypair"
 )
 
 // Token is the in-process session record. Its String() form is what
@@ -123,7 +138,16 @@ const (
 	ChoiceCancelled AuthChoice = iota
 	ChoiceOIDC
 	ChoiceOpenPubkey
+	// ChoiceKeypair = dev ed25519 fallback. Only surfaced by the
+	// picker when AuthConfig.KeypairFallback is true ; otherwise the
+	// 3rd button isn't shown.
+	ChoiceKeypair
 )
+
+// AuthChoiceKeypair is the legacy name for ChoiceKeypair retained as a
+// stable export for consumers / docs that reference the enum members
+// directly. Same underlying value as ChoiceKeypair.
+const AuthChoiceKeypair = ChoiceKeypair
 
 // Picker is the seam between the platform-agnostic Authenticate
 // orchestration and the cgo Cocoa NSWindow. auth_darwin.go provides
@@ -132,8 +156,10 @@ type Picker interface {
 	// Pick blocks until the user picks an auth kind or closes the
 	// window. The window must be raised as a regular foreground app
 	// (this is how the operator sees and clicks it before the tray is
-	// ready).
-	Pick(ctx context.Context) AuthChoice
+	// ready). offerKeypair = true makes the picker show the 3rd
+	// "Sign in with local key (dev)" button ; false keeps the 2-button
+	// layout (production-shape).
+	Pick(ctx context.Context, offerKeypair bool) AuthChoice
 	// OpenAuthWebView opens a child WKWebView pointed at u and returns
 	// the URL it ended up at when the window was either redirected to
 	// the configured redirect_uri or closed by the user.
@@ -173,11 +199,22 @@ func Authenticate(ctx context.Context, cfg AuthConfig, store KeychainStore, pick
 		return tok, nil
 	}
 
-	// 2. Show the picker.
-	choice := picker.Pick(ctx)
+	// 2. Show the picker. The 3rd button is only offered when the
+	// operator has flipped KeypairFallback in app.json — production
+	// builds stay on the 2-button layout.
+	choice := picker.Pick(ctx, cfg.KeypairFallback)
 	switch choice {
 	case ChoiceCancelled:
 		return Token{}, errors.New("auth: window dismissed")
+	case ChoiceKeypair:
+		tok, err := runKeypair(ctx, cfg)
+		if err != nil {
+			return Token{}, err
+		}
+		if err := store.Set(cfg.KeychainService, cfg.KeychainAccount, tok); err != nil {
+			log.Printf("weft-app: keychain write: %v", err)
+		}
+		return tok, nil
 	case ChoiceOpenPubkey:
 		tok, err := runOpenPubkey(ctx, cfg, picker)
 		if err == nil {

@@ -135,14 +135,18 @@ func (m *memKC) Delete(s, a string) error {
 }
 
 type stubPicker struct {
-	choice    AuthChoice
-	pickErr   error
-	returnURL string
-	openErr   error
+	choice          AuthChoice
+	pickErr         error
+	returnURL       string
+	openErr         error
+	sawOfferKeypair bool
 }
 
-func (s stubPicker) Pick(ctx context.Context) AuthChoice { return s.choice }
-func (s stubPicker) OpenAuthWebView(ctx context.Context, u, redir string) (string, error) {
+func (s *stubPicker) Pick(ctx context.Context, offerKeypair bool) AuthChoice {
+	s.sawOfferKeypair = offerKeypair
+	return s.choice
+}
+func (s *stubPicker) OpenAuthWebView(ctx context.Context, u, redir string) (string, error) {
 	if s.openErr != nil {
 		return "", s.openErr
 	}
@@ -150,7 +154,7 @@ func (s stubPicker) OpenAuthWebView(ctx context.Context, u, redir string) (strin
 }
 
 func TestAuthenticateNotEnabledShortCircuits(t *testing.T) {
-	tok, err := Authenticate(context.Background(), AuthConfig{}, &memKC{}, stubPicker{})
+	tok, err := Authenticate(context.Background(), AuthConfig{}, &memKC{}, &stubPicker{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +176,7 @@ func TestAuthenticateUsesCache(t *testing.T) {
 	_ = kc.Set(cfg.KeychainService, cfg.KeychainAccount, cached)
 
 	tok, err := Authenticate(context.Background(), cfg, kc,
-		stubPicker{choice: ChoiceCancelled}) // picker would fail if called
+		&stubPicker{choice: ChoiceCancelled}) // picker would fail if called
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +193,7 @@ func TestAuthenticateExpiredCacheTriggersPicker(t *testing.T) {
 		Kind: TokenOIDC, IDToken: "old", ExpiresAt: time.Now().Add(-time.Hour),
 	})
 	// Picker reports Cancelled ; orchestrator must surface the cancel.
-	_, err := Authenticate(context.Background(), cfg, kc, stubPicker{choice: ChoiceCancelled})
+	_, err := Authenticate(context.Background(), cfg, kc, &stubPicker{choice: ChoiceCancelled})
 	if err == nil {
 		t.Fatal("expected dismissed error")
 	}
@@ -216,7 +220,7 @@ func TestTokenJSONRoundTrip(t *testing.T) {
 }
 
 func TestRunOpenPubkeyReturnsSentinel(t *testing.T) {
-	_, err := runOpenPubkey(context.Background(), AuthConfig{Issuer: "https://i"}, stubPicker{})
+	_, err := runOpenPubkey(context.Background(), AuthConfig{Issuer: "https://i"}, &stubPicker{})
 	if !errors.Is(err, ErrOpenPubkeyUnsupported) {
 		t.Fatalf("want sentinel, got %v", err)
 	}
