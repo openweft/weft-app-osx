@@ -121,6 +121,17 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 		systray.AddSeparator()
 		mDCs := systray.AddMenuItem("Datacenters", "Per-datacenter health")
 		mDCs.Disable()
+		// "Switch cluster" submenu — only useful when the config
+		// declares more than one cluster. Each item calls
+		// sh.SwitchCluster(name) ; the supervisor's reselect emits a
+		// Switch event that propagates to the chip + menubar title.
+		clusterSwitchers := map[string]*systray.MenuItem{}
+		if names := sh.Clusters(); len(names) > 1 {
+			mSwitch := systray.AddMenuItem("Switch cluster", "Federated clusters — pick which one the WebView reads from")
+			for _, name := range names {
+				clusterSwitchers[name] = mSwitch.AddSubMenuItem(name, "Switch the WebView to "+name)
+			}
+		}
 		systray.AddSeparator()
 		// "Sign out" is only meaningful when auth is configured ;
 		// otherwise there's nothing in Keychain to evict.
@@ -141,6 +152,26 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 			signOutCh = mSignOut.ClickedCh
 		}
 
+		// Goroutine per cluster switcher so the main select stays clean.
+		// Each goroutine forwards its clicks into a single channel the
+		// main loop reads ; cluster name flows alongside so we can call
+		// sh.SwitchCluster with it.
+		switchCh := make(chan string, len(clusterSwitchers))
+		for name, item := range clusterSwitchers {
+			name := name
+			ch := item.ClickedCh
+			go func() {
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ch:
+						switchCh <- name
+					}
+				}
+			}()
+		}
+
 		for {
 			select {
 			case <-ctx.Done():
@@ -148,6 +179,8 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 				return
 			case <-mOpen.ClickedCh:
 				openDashboard(sh.URL(), controlURL, authToken)
+			case name := <-switchCh:
+				sh.SwitchCluster(name)
 			case <-signOutCh:
 				signOutAndRelaunch(authCfg)
 				return
