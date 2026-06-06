@@ -1,0 +1,50 @@
+version: '3'
+
+# weft-app-osx is a cgo app (WKWebView via webview_go, the menu-bar item
+# via fyne.io/systray). It builds on macOS with the Xcode command-line
+# tools installed. The shared, non-UI logic it depends on lives in
+# ../weft-app-core and is tested there.
+
+tasks:
+  deps:
+    desc: Fetch module dependencies (needs network)
+    cmds:
+      - go mod download
+
+  build:
+    desc: Build the weft-app-osx binary
+    cmds:
+      - CGO_ENABLED=1 go build -ldflags "-X main.version={{.VERSION}} -X main.commit={{.COMMIT}} -X main.date={{.DATE}}" -o weft-app-osx .
+    vars:
+      VERSION:
+        sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+      COMMIT:
+        sh: git rev-parse --short HEAD 2>/dev/null || echo none
+      DATE:
+        sh: date -u +%Y-%m-%dT%H:%M:%SZ
+
+  run:
+    desc: Build and run (menu-bar mode)
+    deps: [build]
+    cmds:
+      - ./weft-app-osx --config ./config.example.json
+
+  vet:
+    desc: go vet (compiles the cgo package; needs deps + macOS SDK)
+    cmds:
+      - go vet ./...
+
+  fmt:
+    desc: gofmt check
+    cmds:
+      - test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+  bundle:
+    desc: Assemble dist/Weft.app (menu-bar agent; codesign + notarize in CI)
+    cmds:
+      - bash packaging/package.sh
+
+  dmg:
+    desc: Build dist/Weft.dmg (drag-n-drop installer)
+    cmds:
+      - bash packaging/dmg.sh

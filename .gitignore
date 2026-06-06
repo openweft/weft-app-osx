@@ -1,0 +1,4 @@
+/weft-app-osx
+*.app
+*.dmg
+dist/

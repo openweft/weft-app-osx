@@ -1,0 +1,42 @@
+{
+  "_comment": "Copy to ~/Library/Application Support/weft/app.json. Endpoints are in priority order (first = most preferred). The app fails over to the next healthy DC and fails back to a preferred one only after it has been healthy for hold_down.",
+
+  "gateway_addr": "127.0.0.1:0",
+  "hold_down": "15s",
+  "interval": "3s",
+
+  "_auth_comment": "OPTIONAL : omit the whole `auth` block to skip the sign-in window (preserves the dev / SSH-tunnel-only flow). When present, the app shows a 2-button picker (OpenPubkey / OIDC) before bringing up the tray, caches the resulting session token in macOS Keychain, and stamps Bearer on every WebView API call.",
+  "auth": {
+    "issuer": "https://dex.weft.local/dex",
+    "client_id": "weft-app-osx",
+    "scopes": ["openid", "profile", "email", "groups"],
+    "redirect_uri": "http://127.0.0.1:43219/callback"
+  },
+
+  "endpoints": [
+    {
+      "name": "DC-A",
+      "kind": "ssh",
+      "ssh_addr": "bastion-a.weft.example.com:22",
+      "user": "weft",
+      "key_path": "~/.ssh/id_ed25519",
+      "known_hosts_path": "~/.ssh/known_hosts",
+      "webui_addr": "127.0.0.1:8443"
+    },
+    {
+      "name": "DC-B",
+      "kind": "ssh",
+      "ssh_addr": "bastion-b.weft.example.com:22",
+      "user": "weft",
+      "key_path": "~/.ssh/id_ed25519",
+      "known_hosts_path": "~/.ssh/known_hosts",
+      "webui_addr": "127.0.0.1:8443"
+    },
+    {
+      "name": "DC-C-mesh",
+      "kind": "direct",
+      "addr": "10.80.2.11:8080",
+      "_note": "Use 'direct' when the device is already on the WireGuard mesh; the webui listener binds the mesh interface only."
+    }
+  ]
+}

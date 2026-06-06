@@ -1,0 +1,78 @@
+name: Release
+
+# Tag-driven packaging. A Weft.app bundle is built and attached to the
+# GitHub Release ONLY on a vX.Y.Z tag — never on push to main (see the
+# project memory entry "No autopublish during dev"). workflow_dispatch
+# lets a maintainer re-run a build without re-tagging.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to build from'
+        required: false
+        default: ''
+
+permissions:
+  contents: write   # create the release + upload assets
+
+jobs:
+  package:
+    name: Weft.app (macOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0   # so `git describe` stamps a real version
+
+      - name: Checkout weft-app-core
+        uses: actions/checkout@v4
+        with:
+          repository: openweft/weft-app-core
+          path: ../weft-app-core
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Assemble Weft.app
+        run: bash packaging/package.sh dist
+
+      # Code-sign the .app BEFORE imaging, only when signing secrets exist
+      # (forks / untrusted builds still get an unsigned, openable app).
+      - name: Codesign Weft.app
+        if: ${{ secrets.MACOS_CERT_P12 != '' }}
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          echo "TODO - import MACOS_CERT_P12 into a temp keychain, then:"
+          echo "       codesign --deep --options runtime --timestamp --sign 'Developer ID Application: ...' dist/Weft.app"
+
+      - name: Install create-dmg
+        run: brew install create-dmg   # branded background + icon layout
+
+      - name: Build drag-n-drop DMG
+        run: bash packaging/dmg.sh dist   # reuses the (signed) dist/Weft.app
+
+      # Notarize + staple the DMG so Gatekeeper lets users drag-n-drop it.
+      - name: Notarize + staple DMG
+        if: ${{ secrets.AC_API_KEY != '' }}
+        env:
+          AC_API_KEY: ${{ secrets.AC_API_KEY }}
+        run: |
+          echo "TODO - xcrun notarytool submit dist/Weft.dmg --wait + xcrun stapler staple dist/Weft.dmg"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: weft-app-osx-dmg
+          path: dist/Weft.dmg
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Weft.dmg
