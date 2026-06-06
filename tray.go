@@ -187,6 +187,8 @@ func signOutAndRelaunch(cfg AuthConfig) {
 // the active DC's name into the menubar title so it's visible without
 // opening the menu.
 func refreshStatus(ctx context.Context, sh *shell.Shell, parent *systray.MenuItem) {
+	// "<cluster>|<dc>" -> tray entry. Per-cluster headers (disabled
+	// items used as section separators) are keyed by "@<cluster>".
 	items := map[string]*systray.MenuItem{}
 	lastActive := ""
 	t := time.NewTicker(2 * time.Second)
@@ -196,38 +198,48 @@ func refreshStatus(ctx context.Context, sh *shell.Shell, parent *systray.MenuIte
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			activeLabel := ""
+			activeFull := ""
 			for _, st := range sh.Status() {
-				it, ok := items[st.Name]
+				// Cluster header once per cluster, before its first DC.
+				clusterKey := "@" + st.Cluster
+				if st.Cluster != "" {
+					if _, ok := items[clusterKey]; !ok {
+						hdr := parent.AddSubMenuItem(st.ClusterLabelOrName(), st.Cluster)
+						hdr.Disable()
+						items[clusterKey] = hdr
+					}
+				}
+				dcKey := st.Cluster + "|" + st.Name
+				it, ok := items[dcKey]
 				if !ok {
-					it = parent.AddSubMenuItem(st.Label(), st.Target)
-					items[st.Name] = it
+					// Two-space indent so the DC line nests visually
+					// under its cluster header.
+					it = parent.AddSubMenuItem("  "+st.Label(), st.Target)
+					items[dcKey] = it
 				}
 				mark := "○"
 				if st.Health == failover.Up {
 					mark = "●"
 				}
-				// Submenu : friendly label if set, with the technical
-				// ID in parens so operators can correlate to logs.
-				title := mark + " " + st.Label()
+				title := "  " + mark + " " + st.Label()
 				if st.DisplayName != "" && st.DisplayName != st.Name {
 					title += " (" + st.Name + ")"
 				}
 				if st.Active {
 					title += " — active"
-					activeLabel = st.Label()
+					activeFull = st.FullLabel()
 				}
 				it.SetTitle(title)
 			}
-			if activeLabel != lastActive {
-				if activeLabel == "" {
+			if activeFull != lastActive {
+				if activeFull == "" {
 					systray.SetTitle("Weft")
 					systray.SetTooltip("Weft " + version + " — no datacenter reachable")
 				} else {
-					systray.SetTitle(activeLabel)
-					systray.SetTooltip("Weft " + version + " — connected to " + activeLabel)
+					systray.SetTitle(activeFull)
+					systray.SetTooltip("Weft " + version + " — connected to " + activeFull)
 				}
-				lastActive = activeLabel
+				lastActive = activeFull
 			}
 		}
 	}

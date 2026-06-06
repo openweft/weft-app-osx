@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	fyne.io/systray v1.11.0
-	github.com/openweft/weft-app-core v0.0.0-20260606173633-2e36cb9ce482
+	github.com/openweft/weft-app-core v0.0.0-20260606174339-8246d7dd9467
 	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6
 	golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446
 )

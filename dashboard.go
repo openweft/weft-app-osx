@@ -38,11 +38,10 @@ func runDashboard(gatewayURL, controlURL string) {
 	initialDC := ""
 	if controlURL != "" {
 		if a, err := (&control.Client{BaseURL: controlURL}).Get(context.Background()); err == nil {
-			if a.Label != "" {
-				initialDC = a.Label
-			} else {
-				initialDC = a.Name
-			}
+			// FullLabel returns "Cluster · DC" when both are set
+			// (canonical clusters[] shape), just the DC label in legacy
+			// single-cluster mode.
+			initialDC = a.FullLabel()
 		}
 	}
 
@@ -77,14 +76,12 @@ func runDashboard(gatewayURL, controlURL string) {
 		defer cancel()
 		cl := &control.Client{BaseURL: controlURL}
 		go cl.Watch(ctx, func(prev, cur control.Active) {
-			from, to := prev.Label, cur.Label
-			if from == "" {
-				from = prev.Name
-			}
-			if to == "" {
-				to = cur.Name
-			}
-			js := webinject.FailoverNotice(from, to)
+			// FullLabel surfaces "Cluster · DC" so the SPA chip stays
+			// accurate after a switch (even when the cluster changed,
+			// which is technically out of scope of today's flat
+			// supervisor but tomorrow's manual cluster switch will fire
+			// it).
+			js := webinject.FailoverNotice(prev.FullLabel(), cur.FullLabel())
 			w.Dispatch(func() { w.Eval(js) })
 		})
 	}
