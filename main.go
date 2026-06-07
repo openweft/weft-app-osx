@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 
 	corauth "github.com/openweft/weft-app-core/auth"
+	"golang.org/x/term"
 )
 
 // WEFTAuthTokenEnv is the env var the tray uses to pass the
@@ -43,6 +44,7 @@ func main() {
 	configPath := flag.String("config", defaultConfigPath(), "path to the JSON connection config")
 	wgConfigPath := flag.String("wg-config", "", "path to a WireGuard mesh config (enables the wireguard transport)")
 	printPubkey := flag.Bool("print-pubkey", false, "load (or generate) the dev keypair, print the base64 public key to stdout, and exit ; paste the output into the server's --keypair-allowlist file")
+	storeSSHPassphrase := flag.String("store-ssh-passphrase", "", "store the passphrase for the given SSH key file in macOS Keychain ; prompts on the controlling TTY ; the tray + dashboard then auto-decrypt the key without further prompts")
 	flag.Parse()
 
 	// Route the runKeypair diagnostic ("register this pubkey on the
@@ -63,6 +65,13 @@ func main() {
 	if *printPubkey {
 		if err := printPubkeyAndExit(*configPath); err != nil {
 			log.Fatalf("weft-app: --print-pubkey: %v", err)
+		}
+		return
+	}
+
+	if *storeSSHPassphrase != "" {
+		if err := storeSSHPassphraseAndExit(*storeSSHPassphrase); err != nil {
+			log.Fatalf("weft-app: --store-ssh-passphrase: %v", err)
 		}
 		return
 	}
@@ -113,6 +122,61 @@ func defaultConfigPath() string {
 		return filepath.Join(dir, "weft", "app.json")
 	}
 	return "weft-app.json"
+}
+
+// readPassphraseFromTTY reads a single line from /dev/tty with echo
+// disabled (so the passphrase doesn't appear on screen or in scrollback).
+// Falls back to os.Stdin when /dev/tty isn't openable (LaunchAgent /
+// CI context) — those paths warn that echo isn't muted.
+func readPassphraseFromTTY() ([]byte, error) {
+	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	if err == nil {
+		defer tty.Close()
+		pp, err := term.ReadPassword(int(tty.Fd()))
+		fmt.Fprintln(os.Stderr)
+		return pp, err
+	}
+	fmt.Fprintln(os.Stderr, "weft-app: warning : /dev/tty unavailable ; reading from stdin with echo")
+	var line []byte
+	buf := make([]byte, 1)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if n == 0 || err != nil {
+			return line, err
+		}
+		if buf[0] == '\n' {
+			return line, nil
+		}
+		line = append(line, buf[0])
+	}
+}
+
+// storeSSHPassphraseAndExit reads a passphrase from the controlling
+// terminal (so it doesn't leak through env vars, shell history, or
+// pipe-snooping) and stores it under the SSH passphrase Keychain entry
+// keyed by the absolute key path. The tray then auto-decrypts the key
+// via the Keychain on every launch without prompting again.
+//
+// Re-running this command for an already-cached key overwrites the
+// entry — operators rotate keys this way.
+func storeSSHPassphraseAndExit(keyPath string) error {
+	abs, err := filepath.Abs(keyPath)
+	if err != nil {
+		return fmt.Errorf("resolve %s: %w", keyPath, err)
+	}
+	if _, err := os.Stat(abs); err != nil {
+		return fmt.Errorf("ssh key %s: %w", abs, err)
+	}
+	fmt.Fprintf(os.Stderr, "Enter passphrase for %s (empty if none):\n", abs)
+	pp, err := readPassphraseFromTTY()
+	if err != nil {
+		return err
+	}
+	if err := sshPassphraseSet(abs, pp); err != nil {
+		return err
+	}
+	fmt.Fprintf(os.Stderr, "weft-app: passphrase cached in Keychain (service=%s account=%s)\n", sshPassphraseService, abs)
+	return nil
 }
 
 // printPubkeyAndExit loads (or generates) the ed25519 keypair for the

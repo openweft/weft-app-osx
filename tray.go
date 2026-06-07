@@ -47,7 +47,17 @@ func setupShell(ctx context.Context, configPath, wgConfigPath, authToken string)
 		return nil, "", err
 	}
 
-	opts := shell.Options{AuthToken: authToken}
+	opts := shell.Options{
+		AuthToken: authToken,
+		// SSHPassphrase reads from macOS Keychain (service=weft-ssh-
+		// passphrase, account=<absolute key path>). The operator pre-
+		// stages an entry via `weft-app-osx --store-ssh-passphrase
+		// <path>` ; the lookup is silent on miss (returns nil), letting
+		// the underlying parse error surface a clear next-step message.
+		SSHPassphrase: func(keyPath string) ([]byte, error) {
+			return sshPassphraseGet(keyPath)
+		},
+	}
 	if wgConfigPath != "" {
 		wc, err := LoadWGConfig(wgConfigPath)
 		if err != nil {
