@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in to Weft</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      margin: 0;
+      padding: 36px 32px;
+      -webkit-font-smoothing: antialiased;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #1e1e1e; color: #f5f5f7; }
+      .btn { background: #2c2c2e; border-color: #3a3a3c; color: #f5f5f7; }
+      .btn:hover:not(:disabled) { background: #3a3a3c; }
+      .btn .sub { color: #98989d; }
+      .footer { color: #98989d; }
+      .error { background: #3a1313; color: #ff6961; border-color: #5a1f1f; }
+    }
+    .logo {
+      width: 56px; height: 56px;
+      display: block;
+      margin: 0 auto 12px;
+      color: #1d1d1f;
+    }
+    @media (prefers-color-scheme: dark) { .logo { color: #f5f5f7; } }
+    h1 {
+      text-align: center;
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0 0 4px;
+    }
+    .subhead {
+      text-align: center;
+      font-size: 13px;
+      color: #6e6e73;
+      margin: 0 0 24px;
+    }
+    @media (prefers-color-scheme: dark) { .subhead { color: #98989d; } }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 10px 14px;
+      margin-bottom: 10px;
+      background: #ffffff;
+      border: 1px solid #d2d2d7;
+      border-radius: 10px;
+      font: inherit;
+      cursor: pointer;
+      text-align: left;
+      transition: background 120ms ease;
+    }
+    .btn:hover:not(:disabled) { background: #f5f5f7; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.busy { opacity: 0.6; cursor: wait; }
+    .btn .label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .btn .sub {
+      display: block;
+      font-size: 11px;
+      color: #6e6e73;
+      margin-top: 2px;
+      font-weight: 400;
+    }
+    .error {
+      background: #ffe6e6;
+      color: #b00020;
+      border: 1px solid #ffc4c4;
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 12px;
+      display: none;
+    }
+    .error.visible { display: block; }
+    .footer {
+      text-align: center;
+      font-size: 10px;
+      color: #6e6e73;
+      margin-top: 18px;
+    }
+  </style>
+</head>
+<body>
+  <svg class="logo" viewBox="0 0 256 256" role="img" aria-label="Weft" xmlns="http://www.w3.org/2000/svg">
+    <g fill="none" stroke-linecap="round">
+      <line x1="68" y1="40" x2="68" y2="216" stroke="currentColor" stroke-width="22"/>
+      <line x1="188" y1="40" x2="188" y2="216" stroke="currentColor" stroke-width="22"/>
+      <line x1="36" y1="128" x2="220" y2="128" stroke="#2563eb" stroke-width="22"/>
+      <line x1="128" y1="40" x2="128" y2="216" stroke="currentColor" stroke-width="22"/>
+    </g>
+  </svg>
+  <h1>Sign in to Weft</h1>
+  <p class="subhead" id="subhead">Authenticate against your cluster's identity provider.</p>
+
+  <div id="error" class="error"></div>
+
+  <button class="btn" id="oidc">
+    <span class="label">Sign in with OIDC</span>
+    <span class="sub">Redirects to your identity provider (dex by default)</span>
+  </button>
+  <button class="btn" id="openpubkey">
+    <span class="label">Sign in with OpenPubkey</span>
+    <span class="sub">SSH cert bound to OIDC (requires dex /openpubkey)</span>
+  </button>
+  <button class="btn" id="keypair" style="display:none">
+    <span class="label">Sign in with local key</span>
+    <span class="sub">ed25519 keypair in macOS Keychain — dev only</span>
+  </button>
+
+  <div class="footer" id="footer">Weft</div>
+
+  <script>
+    // The Go-side injects window.weftConfig via w.Init() before the
+    // page loads. It tells us which buttons to show + the issuer URL
+    // for the subhead.
+    const cfg = window.weftConfig || {};
+    if (cfg.keypair_fallback) {
+      document.getElementById('keypair').style.display = 'block';
+    }
+    if (cfg.issuer) {
+      document.getElementById('subhead').textContent = 'Connecting to ' + cfg.issuer;
+    }
+    if (cfg.version) {
+      document.getElementById('footer').textContent = 'Weft ' + cfg.version;
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('error');
+      el.textContent = msg;
+      el.classList.add('visible');
+    }
+    function clearError() {
+      const el = document.getElementById('error');
+      el.textContent = '';
+      el.classList.remove('visible');
+    }
+    function setBusy(btn) {
+      [...document.querySelectorAll('.btn')].forEach(b => b.disabled = true);
+      btn.classList.add('busy');
+    }
+    function clearBusy() {
+      [...document.querySelectorAll('.btn')].forEach(b => {
+        b.disabled = false;
+        b.classList.remove('busy');
+      });
+    }
+
+    document.getElementById('keypair').addEventListener('click', async (e) => {
+      clearError();
+      setBusy(e.currentTarget);
+      try {
+        await window.weftSignInKeypair();
+        // Go side terminates the webview on success ; this line never runs.
+      } catch (err) {
+        showError(err && err.message ? err.message : String(err));
+        clearBusy();
+      }
+    });
+
+    document.getElementById('oidc').addEventListener('click', async (e) => {
+      clearError();
+      setBusy(e.currentTarget);
+      try {
+        // Go builds + returns the IdP authorize URL with PKCE state ;
+        // we navigate THIS webview there, the user logs in, the IdP
+        // redirects to http://127.0.0.1:<port>/callback?code=... and
+        // the loopback listener Go set up captures it. Go then closes
+        // the webview.
+        const url = await window.weftStartOIDC();
+        window.location.href = url;
+      } catch (err) {
+        showError(err && err.message ? err.message : String(err));
+        clearBusy();
+      }
+    });
+
+    document.getElementById('openpubkey').addEventListener('click', async (e) => {
+      clearError();
+      setBusy(e.currentTarget);
+      try {
+        await window.weftSignInOpenPubkey();
+      } catch (err) {
+        showError(err && err.message ? err.message : String(err));
+        clearBusy();
+      }
+    });
+  </script>
+</body>
+</html>

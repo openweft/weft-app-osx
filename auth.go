@@ -188,9 +188,6 @@ func Authenticate(ctx context.Context, cfg AuthConfig, store KeychainStore, pick
 	if store == nil {
 		store = defaultKeychain()
 	}
-	if picker == nil {
-		picker = defaultPicker()
-	}
 
 	// 1. Try the cached token.
 	if tok, ok, err := store.Get(cfg.KeychainService, cfg.KeychainAccount); err != nil {
@@ -199,9 +196,17 @@ func Authenticate(ctx context.Context, cfg AuthConfig, store KeychainStore, pick
 		return tok, nil
 	}
 
-	// 2. Show the picker. The 3rd button is only offered when the
-	// operator has flipped KeypairFallback in app.json — production
-	// builds stay on the 2-button layout.
+	// 2a. Production path : a nil picker means use the WKWebView
+	// login window (auth_login.go) — one window for all auth methods,
+	// OIDC navigates the same WebView to the IdP login. Tests inject
+	// a non-nil stub picker to take the NSWindow path below.
+	if picker == nil {
+		return runLoginWebView(ctx, cfg, store)
+	}
+
+	// 2b. Legacy NSWindow picker path — kept for test injection. The
+	// 3rd button is only offered when the operator has flipped
+	// KeypairFallback in app.json.
 	choice := picker.Pick(ctx, cfg.KeypairFallback)
 	switch choice {
 	case ChoiceCancelled:
