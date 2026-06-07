@@ -56,6 +56,78 @@ open it, and drag **Weft** onto **Applications**. Weft runs as a menu-bar
 icon (no Dock icon). Release builds are code-signed + notarized, so
 Gatekeeper opens them without warnings.
 
+## Encrypted SSH key + Keychain passphrase
+
+The SSH transport accepts a passphrase-protected key — the recommended
+posture — without prompting on every launch. The flow :
+
+```
+   ┌─────────────────┐    ┌───────────────────┐    ┌──────────────────┐
+   │ ~/.ssh/id_ed25519│   │ macOS Keychain     │   │ weft-app-osx     │
+   │ (PEM, encrypted) │   │ service=           │   │                  │
+   │                  │   │  weft-ssh-passphrase│  │ SSHForward       │
+   │                  │   │ account=<key path> │   │ (Tart hosts)     │
+   └────────┬─────────┘   └─────────┬──────────┘   └────────┬─────────┘
+            │                       │                       │
+            │ read PEM              │ release passphrase    │ ssh dial
+            └──────┬────────────────┘    (TouchID gate)     │
+                   │                       │                │
+                   ▼                       │                │
+   ssh.ParsePrivateKeyWithPassphrase(pem, passphrase) ──────┘
+```
+
+**One-shot setup**
+
+```bash
+# 1. Make sure the key is actually passphrase-protected. If you generated
+#    it without one and want to add one :
+ssh-keygen -p -f ~/.ssh/id_ed25519
+# Old passphrase: (empty)
+# New passphrase: ●●●●●●●●
+
+# 2. Stage the passphrase in macOS Keychain. Prompts on /dev/tty with
+#    echo off, so it never lands in shell history or env vars.
+/Applications/Weft.app/Contents/MacOS/weft-app-osx \
+    --store-ssh-passphrase ~/.ssh/id_ed25519
+# Enter passphrase for /Users/<you>/.ssh/id_ed25519 (empty if none):
+# ●●●●●●●●
+# weft-app: passphrase cached in Keychain
+#           (service=weft-ssh-passphrase account=/Users/<you>/.ssh/id_ed25519)
+```
+
+**Subsequent launches** — the tray's shell calls `sshPassphraseGet` when
+`ssh.ParsePrivateKey` returns `*ssh.PassphraseMissingError`; the Keychain
+release is gated by macOS's standard authentication UI.
+
+**Touch ID** — works exactly as it does for any Keychain item :
+
+- enable Touch ID in **System Settings → Touch ID & Password**, and tick
+  **Use Touch ID to unlock items in Keychain** (Sequoia and later wire
+  this in automatically when "Use Touch ID to unlock Mac" is on)
+- on the first release per session macOS shows the standard *"weft-app-osx
+  wants to use the 'login' keychain"* prompt with a *Touch ID* button ;
+  press your finger and the passphrase is released without typing your
+  password
+- subsequent releases in the same session are cached — no prompt at all
+
+Tighter enforcement (require biometry, refuse the password fallback) is a
+one-line change to `ssh_passphrase_darwin.go` — set
+`kSecAttrAccessControl` with `kSecAccessControlBiometryAny`. Off by
+default so the app still works on Macs without a biometric sensor or on
+external displays where Touch ID hardware isn't available.
+
+**Rotation** — re-running `--store-ssh-passphrase` overwrites the entry.
+To wipe :
+
+```bash
+security delete-generic-password \
+    -s weft-ssh-passphrase \
+    -a ~/.ssh/id_ed25519
+```
+
+The Keychain item is per-key-file-path, so multiple keys (e.g. one per
+production cluster) coexist without colliding.
+
 ## Build
 
 Requires macOS + Xcode command-line tools (cgo).
