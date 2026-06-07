@@ -133,21 +133,34 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 			}
 		}
 		systray.AddSeparator()
-		// "Sign out" is only meaningful when auth is configured ;
-		// otherwise there's nothing in Keychain to evict.
-		var mSignOut *systray.MenuItem
+		// "Sign in" and "Sign out" are only meaningful when auth is
+		// configured. Visibility depends on whether a non-expired token
+		// is currently in our in-memory cache : signed in → Sign out
+		// visible, signed out → Sign in visible. The toggle is driven
+		// by trayState below.
+		var mSignIn, mSignOut *systray.MenuItem
 		if authCfg.Enabled() {
+			mSignIn = systray.AddMenuItem("Sign in", "Open the auth window and sign in to the cluster")
 			mSignOut = systray.AddMenuItem("Sign out", "Forget the cached session and re-authenticate")
+			if authToken == "" {
+				mSignOut.Hide()
+			} else {
+				mSignIn.Hide()
+			}
 			systray.AddSeparator()
 		}
 		mQuit := systray.AddMenuItem("Quit", "Quit Weft")
 
 		go refreshStatus(ctx, sh, mDCs)
 
-		// signOutCh is a never-firing nil channel when auth isn't
-		// configured, so the select below stays valid without an extra
-		// branch.
-		var signOutCh <-chan struct{}
+		// signInCh / signOutCh are never-firing nil channels when auth
+		// isn't configured, so the select below stays valid without an
+		// extra branch. live token is kept in `authToken` (loop-local
+		// copy of the arg) so openDashboard always sees the latest.
+		var signInCh, signOutCh <-chan struct{}
+		if mSignIn != nil {
+			signInCh = mSignIn.ClickedCh
+		}
 		if mSignOut != nil {
 			signOutCh = mSignOut.ClickedCh
 		}
@@ -181,9 +194,29 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 				openDashboard(sh.URL(), controlURL, authToken)
 			case name := <-switchCh:
 				sh.SwitchCluster(name)
+			case <-signInCh:
+				if tok, ok := spawnSignInAndReload(authCfg); ok {
+					authToken = tok
+					if mSignIn != nil {
+						mSignIn.Hide()
+					}
+					if mSignOut != nil {
+						mSignOut.Show()
+					}
+				}
 			case <-signOutCh:
-				signOutAndRelaunch(authCfg)
-				return
+				if authCfg.Enabled() {
+					if err := defaultKeychain().Delete(authCfg.KeychainService, authCfg.KeychainAccount); err != nil {
+						log.Printf("weft-app: sign out: %v", err)
+					}
+				}
+				authToken = ""
+				if mSignOut != nil {
+					mSignOut.Hide()
+				}
+				if mSignIn != nil {
+					mSignIn.Show()
+				}
 			case <-mQuit.ClickedCh:
 				systray.Quit()
 				return
@@ -192,12 +225,42 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 	}
 }
 
+// spawnSignInAndReload runs the auth window in a child process (the
+// `--sign-in` mode of this binary) so the modal's main-thread affinity
+// doesn't clash with systray's. Blocks until the child exits ; on
+// success the new token is in Keychain and we read it back into the
+// tray's in-memory cache so openDashboard sees it on the very next
+// click. Returns (token, true) on success, ("", false) on failure or
+// user-dismissed window.
+func spawnSignInAndReload(cfg AuthConfig) (string, bool) {
+	exe, err := os.Executable()
+	if err != nil {
+		log.Printf("weft-app: locate executable: %v", err)
+		return "", false
+	}
+	cmd := exec.Command(exe, "--sign-in")
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if err := cmd.Run(); err != nil {
+		log.Printf("weft-app: sign in subprocess: %v", err)
+		return "", false
+	}
+	tok, ok, err := defaultKeychain().Get(cfg.KeychainService, cfg.KeychainAccount)
+	if err != nil || !ok || tok.Expired() || tok.Bearer() == "" {
+		log.Printf("weft-app: sign in subprocess returned but no usable token in keychain (err=%v ok=%v)", err, ok)
+		return "", false
+	}
+	return tok.Bearer(), true
+}
+
 // signOutAndRelaunch drops the cached Keychain entry, spawns a fresh
 // copy of this binary (which will hit Authenticate, find no cached
 // token, and raise the auth window) and quits the current tray. Doing
 // it via a subprocess keeps the current tray's main thread free to
 // shut down cleanly — the systray run loop captured it, so we can't
 // re-enter Cocoa's modal here.
+//
+// Kept for back-compat — not invoked anymore by onReady, which now
+// toggles Sign in / Sign out inline using spawnSignInAndReload.
 func signOutAndRelaunch(cfg AuthConfig) {
 	if cfg.Enabled() {
 		if err := defaultKeychain().Delete(cfg.KeychainService, cfg.KeychainAccount); err != nil {

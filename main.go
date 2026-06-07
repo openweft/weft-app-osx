@@ -37,6 +37,7 @@ const WEFTAuthTokenEnv = "WEFT_AUTH_TOKEN"
 
 func main() {
 	dashboard := flag.Bool("dashboard", false, "run the dashboard WebView window (spawned by the tray)")
+	signIn := flag.Bool("sign-in", false, "run the auth window (spawned by the tray on click of the Sign in menu item)")
 	gatewayURL := flag.String("url", "", "gateway origin to load (dashboard mode)")
 	controlURL := flag.String("control", "", "control server origin (dashboard mode)")
 	configPath := flag.String("config", defaultConfigPath(), "path to the JSON connection config")
@@ -54,6 +55,11 @@ func main() {
 		return
 	}
 
+	if *signIn {
+		runSignIn(*configPath)
+		return
+	}
+
 	if *printPubkey {
 		if err := printPubkeyAndExit(*configPath); err != nil {
 			log.Fatalf("weft-app: --print-pubkey: %v", err)
@@ -61,25 +67,43 @@ func main() {
 		return
 	}
 
-	// Authenticate before bringing up the tray, so the operator faces
-	// the picker first rather than a tray menu that opens onto an
-	// unauthenticated webui. When app.json has no `auth` block this is
-	// a no-op (cfg.Enabled() == false) and we keep the dev /
-	// SSH-tunnel-only flow exactly as before.
+	// Load the auth config and try the Keychain for a cached, non-expired
+	// token. If found, hand it straight to the tray ; otherwise start the
+	// tray with an empty token and surface a "Sign in" menu item the
+	// operator clicks to spawn the auth window on demand. This avoids the
+	// "window closes silently on auth failure" UX trap and lets the tray
+	// come up even when the cluster's identity stack is down.
 	authCfg, err := LoadAuthConfig(*configPath)
 	if err != nil {
 		log.Printf("weft-app: load auth config: %v (continuing without auth)", err)
 	}
 	var token string
 	if authCfg.Enabled() {
-		tok, err := Authenticate(context.Background(), authCfg, nil, nil)
-		if err != nil {
-			log.Fatalf("weft-app: authenticate: %v", err)
+		if tok, ok, err := defaultKeychain().Get(authCfg.KeychainService, authCfg.KeychainAccount); err != nil {
+			log.Printf("weft-app: keychain read: %v (sign in from the tray)", err)
+		} else if ok && !tok.Expired() && tok.Bearer() != "" {
+			token = tok.Bearer()
 		}
-		token = tok.Bearer()
 	}
 
 	runTray(*configPath, *wgConfigPath, token, authCfg)
+}
+
+// runSignIn is the entry the tray spawns when the operator clicks
+// "Sign in". It owns the main thread for the duration of the Cocoa
+// modal (runModalForWindow needs main-thread affinity) ; the new
+// token is written to Keychain by Authenticate, the tray polls
+// Keychain after the subprocess exits to refresh its in-memory copy.
+func runSignIn(configPath string) {
+	authCfg, err := LoadAuthConfig(configPath)
+	if err != nil || !authCfg.Enabled() {
+		log.Fatalf("weft-app: --sign-in : auth block missing or unreadable in %s", configPath)
+	}
+	promoteDashboardActivation() // bring this subprocess to the foreground so the NSWindow is visible + key
+	if _, err := Authenticate(context.Background(), authCfg, nil, nil); err != nil {
+		log.Fatalf("weft-app: sign in: %v", err)
+	}
+	log.Printf("weft-app: sign in ok")
 }
 
 // defaultConfigPath is ~/Library/Application Support/weft/app.json on
