@@ -118,6 +118,16 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 		// active DC and the tooltip carries the version. The version
 		// stays accessible via the Datacenters submenu's tooltip too.
 		mOpen := systray.AddMenuItem("Open Dashboard", "Open the Weft dashboard")
+		// Open Dashboard is disabled until we have a usable token when
+		// auth is configured. Without that gate, clicking it would
+		// spawn a WKWebView pointed at an origin every request to which
+		// would be redirected to the sign-in page by the webui — the
+		// dashboard would render OIDC chrome instead of the SPA. When
+		// auth isn't configured (omitted from app.json) the item stays
+		// enabled — preserves the dev / SSH-tunnel-only flow.
+		if authCfg.Enabled() && authToken == "" {
+			mOpen.Disable()
+		}
 		systray.AddSeparator()
 		mDCs := systray.AddMenuItem("Datacenters", "Per-datacenter health")
 		mDCs.Disable()
@@ -203,6 +213,7 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 					if mSignOut != nil {
 						mSignOut.Show()
 					}
+					mOpen.Enable()
 				}
 			case <-signOutCh:
 				if authCfg.Enabled() {
@@ -217,6 +228,7 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 				if mSignIn != nil {
 					mSignIn.Show()
 				}
+				mOpen.Disable()
 			case <-mQuit.ClickedCh:
 				systray.Quit()
 				return
