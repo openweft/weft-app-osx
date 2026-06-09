@@ -29,7 +29,9 @@
           "user": "weft",
           "key_path": "~/.ssh/id_ed25519",
           "known_hosts_path": "~/.ssh/known_hosts",
-          "webui_addr": "127.0.0.1:8443"
+          "webui_addr": "127.0.0.1:8443",
+          "_loom_note": "OPTIONAL : when this DC also runs a weft-loom microVM (deployment.type=ha, role=loom), expose its listener via the same bastion's SSH-forward and set loom_addr. The shell builds a second supervisor + gateway pair pointing here ; the tray's 'Open Loom' menu item shows a stable loopback origin that fails over silently between DCs.",
+          "loom_addr": "127.0.0.1:18080"
         },
         {
           "name": "salle-bercy",
@@ -39,14 +41,16 @@
           "user": "weft",
           "key_path": "~/.ssh/id_ed25519",
           "known_hosts_path": "~/.ssh/known_hosts",
-          "webui_addr": "127.0.0.1:8443"
+          "webui_addr": "127.0.0.1:8443",
+          "loom_addr": "127.0.0.1:18080"
         },
         {
           "name": "salle-tolbiac",
           "display_name": "Tolbiac",
           "kind": "direct",
           "addr": "10.80.2.11:8080",
-          "_note": "Use 'direct' when the device is already on the WireGuard mesh ; the webui listener binds the mesh interface only."
+          "loom_addr": "10.80.2.11:18080",
+          "_note": "Use 'direct' when the device is already on the WireGuard mesh ; the webui listener binds the mesh interface only. When loom is also reachable on the mesh, set loom_addr to its mesh-IP:port."
         }
       ]
     },

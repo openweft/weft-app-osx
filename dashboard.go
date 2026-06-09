@@ -14,10 +14,16 @@ import (
 
 // runDashboard shows the dashboard WKWebView, pointed at the gateway
 // origin the tray process exposes. Blocks on the WebView run loop (this
-// process's main thread).
-func runDashboard(gatewayURL, controlURL string) {
+// process's main thread). title is the WKWebView window title — "Weft"
+// for the primary dashboard, "Weft Loom" for the loom secondary
+// window so the two are distinguishable in the macOS Dock + Mission
+// Control.
+func runDashboard(gatewayURL, controlURL, title string) {
 	if gatewayURL == "" {
 		log.Fatal("weft-app: --url is required in dashboard mode")
+	}
+	if title == "" {
+		title = "Weft"
 	}
 
 	// Parent tray runs as LSUIElement (menubar agent — no Dock, no
@@ -29,7 +35,7 @@ func runDashboard(gatewayURL, controlURL string) {
 
 	w := webview.New(false)
 	defer w.Destroy()
-	w.SetTitle("Weft")
+	w.SetTitle(title)
 	w.SetSize(1280, 860, webview.HintNone)
 
 	// Seed the Topbar chip with the current DC name (one-shot) so it

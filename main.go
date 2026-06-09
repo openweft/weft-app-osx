@@ -38,6 +38,7 @@ const WEFTAuthTokenEnv = "WEFT_AUTH_TOKEN"
 
 func main() {
 	dashboard := flag.Bool("dashboard", false, "run the dashboard WebView window (spawned by the tray)")
+	loomMode := flag.Bool("loom", false, "in --dashboard mode, treat --url as the loom gateway and set the WebView title to 'Weft Loom'")
 	signIn := flag.Bool("sign-in", false, "run the auth window (spawned by the tray on click of the Sign in menu item)")
 	gatewayURL := flag.String("url", "", "gateway origin to load (dashboard mode)")
 	controlURL := flag.String("control", "", "control server origin (dashboard mode)")
@@ -53,7 +54,11 @@ func main() {
 	stderr = os.Stderr
 
 	if *dashboard {
-		runDashboard(*gatewayURL, *controlURL)
+		title := "Weft"
+		if *loomMode {
+			title = "Weft Loom"
+		}
+		runDashboard(*gatewayURL, *controlURL, title)
 		return
 	}
 

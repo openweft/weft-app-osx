@@ -138,6 +138,21 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 		if authCfg.Enabled() && authToken == "" {
 			mOpen.Disable()
 		}
+		// Loom secondary editor. The menu item is only added when
+		// shell.Shell.LoomURL() is non-empty — i.e. at least one DC
+		// in app.json declares a loom_addr. Same auth gate as Open
+		// Dashboard ; the loom server validates the same OIDC tokens
+		// the webui does (dex backed). Loom's gateway runs alongside
+		// the primary one ; failover between loom replicas is silent
+		// from the user's perspective (the loopback origin is stable).
+		var mOpenLoom *systray.MenuItem
+		loomURL := sh.LoomURL()
+		if loomURL != "" {
+			mOpenLoom = systray.AddMenuItem("Open Loom", "Open the collaborative editor (multi-DC HA)")
+			if authCfg.Enabled() && authToken == "" {
+				mOpenLoom.Disable()
+			}
+		}
 		systray.AddSeparator()
 		mDCs := systray.AddMenuItem("Datacenters", "Per-datacenter health")
 		mDCs.Disable()
@@ -205,6 +220,13 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 			}()
 		}
 
+		// loomClickCh : nil when the menu item wasn't added (no loom_addr
+		// in any DC). select on a nil channel never selects, so the
+		// branch is naturally inert without an extra guard.
+		var loomClickCh chan struct{}
+		if mOpenLoom != nil {
+			loomClickCh = mOpenLoom.ClickedCh
+		}
 		for {
 			select {
 			case <-ctx.Done():
@@ -212,6 +234,8 @@ func onReady(ctx context.Context, sh *shell.Shell, controlURL, authToken string,
 				return
 			case <-mOpen.ClickedCh:
 				openDashboard(sh.URL(), controlURL, authToken)
+			case <-loomClickCh:
+				openLoom(sh.LoomURL(), controlURL, authToken)
 			case name := <-switchCh:
 				sh.SwitchCluster(name)
 			case <-signInCh:
@@ -382,5 +406,30 @@ func openDashboard(gatewayURL, controlURL, authToken string) {
 	}
 	if err := cmd.Start(); err != nil {
 		log.Printf("weft-app: open dashboard: %v", err)
+	}
+}
+
+// openLoom mirrors openDashboard but points the spawned subprocess at
+// the loom gateway origin via the --loom flag. The subprocess sets the
+// window title to "Weft Loom" so the user can tell the two WKWebView
+// windows apart in the macOS Dock + Mission Control.
+//
+// Same authToken pipeline as openDashboard — the loom server validates
+// the same dex OIDC tokens the webui does, so a single sign-in covers
+// both surfaces.
+func openLoom(loomURL, controlURL, authToken string) {
+	exe, err := os.Executable()
+	if err != nil {
+		log.Printf("weft-app: locate executable: %v", err)
+		return
+	}
+	cmd := exec.Command(exe, "--dashboard", "--loom", "--url", loomURL, "--control", controlURL)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	cmd.Env = os.Environ()
+	if authToken != "" {
+		cmd.Env = append(cmd.Env, WEFTAuthTokenEnv+"="+authToken)
+	}
+	if err := cmd.Start(); err != nil {
+		log.Printf("weft-app: open loom: %v", err)
 	}
 }
