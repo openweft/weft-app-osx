@@ -14,18 +14,18 @@ jobs:
     name: gofmt + build (macOS, cgo/WKWebView)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # weft-app-osx depends on the sibling weft-app-core module via a
       # `replace` directive; CI clones it alongside.
       - name: Checkout weft-app-core
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: openweft/weft-app-core
           path: ../weft-app-core
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.26.x'
           cache: true
