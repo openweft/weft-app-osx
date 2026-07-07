@@ -17,14 +17,14 @@
 //
 // Once the issuer ships the endpoint, this file's runOpenPubkey will :
 //
-//   1. Run the OIDC PKCE flow to acquire an id_token (same code path
-//      as runOIDC, but we keep the id_token instead of returning it).
-//   2. Generate a fresh ed25519 keypair locally.
-//   3. POST {id_token, public_key} to <issuer>/openpubkey/cert.
-//   4. Receive a PK token (JWT) ; persist (PK token, private key) in
-//      Keychain as a single blob.
-//   5. The WebView fetch interceptor signs each request with the
-//      private key and attaches the PK token as the Bearer value.
+//  1. Run the OIDC PKCE flow to acquire an id_token (same code path
+//     as runOIDC, but we keep the id_token instead of returning it).
+//  2. Generate a fresh ed25519 keypair locally.
+//  3. POST {id_token, public_key} to <issuer>/openpubkey/cert.
+//  4. Receive a PK token (JWT) ; persist (PK token, private key) in
+//     Keychain as a single blob.
+//  5. The WebView fetch interceptor signs each request with the
+//     private key and attaches the PK token as the Bearer value.
 package main
 
 import (

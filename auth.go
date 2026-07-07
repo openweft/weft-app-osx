@@ -2,23 +2,23 @@
 //
 // The startup path is :
 //
-//   1. main.go loads app.json. If the new top-level `auth` block is
-//      absent, the app skips auth entirely (preserves the dev /
-//      SSH-tunnel-only flow). If present, it calls Authenticate.
+//  1. main.go loads app.json. If the new top-level `auth` block is
+//     absent, the app skips auth entirely (preserves the dev /
+//     SSH-tunnel-only flow). If present, it calls Authenticate.
 //
-//   2. Authenticate first checks Keychain for a cached non-expired
-//      session ; if found, returns it.
+//  2. Authenticate first checks Keychain for a cached non-expired
+//     session ; if found, returns it.
 //
-//   3. Otherwise, it shows a native Cocoa picker (auth_darwin.go) with
-//      two buttons : "Sign in with OpenPubkey" and "Sign in with OIDC".
-//      The user clicks one ; the chosen flow runs in a child
-//      WKWebView ; the resulting token is persisted in Keychain and
-//      returned.
+//  3. Otherwise, it shows a native Cocoa picker (auth_darwin.go) with
+//     two buttons : "Sign in with OpenPubkey" and "Sign in with OIDC".
+//     The user clicks one ; the chosen flow runs in a child
+//     WKWebView ; the resulting token is persisted in Keychain and
+//     returned.
 //
-//   4. main.go wires the token into shell.Options.AuthToken and into
-//      the dashboard subprocess via WEFT_AUTH_TOKEN ; the WebView fetch
-//      interceptor (webinject.AuthInterceptor) stamps every same-origin
-//      API call.
+//  4. main.go wires the token into shell.Options.AuthToken and into
+//     the dashboard subprocess via WEFT_AUTH_TOKEN ; the WebView fetch
+//     interceptor (webinject.AuthInterceptor) stamps every same-origin
+//     API call.
 package main
 
 import (
