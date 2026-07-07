@@ -14,8 +14,8 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -66,8 +66,8 @@ func runLoginWebView(ctx context.Context, cfg AuthConfig, store KeychainStore) (
 	// the main thread, which exits w.Run() by calling w.Terminate()
 	// once it has the token (or an error to surface back to the user).
 	var (
-		resultMu sync.Mutex
-		result   Token
+		resultMu  sync.Mutex
+		result    Token
 		resultErr error
 		resultSet bool
 	)

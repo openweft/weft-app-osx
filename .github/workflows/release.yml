@@ -22,18 +22,11 @@ jobs:
     name: Weft.app (macOS)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.ref }}
           fetch-depth: 0   # so `git describe` stamps a real version
-
-      - name: Checkout weft-app-core
-        uses: actions/checkout@v4
-        with:
-          repository: openweft/weft-app-core
-          path: ../weft-app-core
-
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26.x'
           cache: true
@@ -66,7 +59,7 @@ jobs:
         run: |
           echo "TODO - xcrun notarytool submit dist/Weft.dmg --wait + xcrun stapler staple dist/Weft.dmg"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: weft-app-osx-dmg
           path: dist/Weft.dmg

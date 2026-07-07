@@ -7,8 +7,8 @@
 //
 // macOS-only ; the cgo equivalent of :
 //
-//   [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
-//   [NSApp activateIgnoringOtherApps:YES];
+//	[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+//	[NSApp activateIgnoringOtherApps:YES];
 package main
 
 /*
