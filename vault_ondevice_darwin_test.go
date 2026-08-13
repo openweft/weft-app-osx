@@ -9,15 +9,18 @@ import (
 	"time"
 )
 
-// These tests exercise the migrated secKeychain / secKeypair stores against
-// the real login Keychain on this machine, proving the go-macos/keychain
-// delegation preserves the pre-migration behaviour (add, overwrite, read
-// back, miss reports ok=false, delete is idempotent). Unique per-run
-// service/account values keep them clear of any real credential.
+// These tests exercise the keyring-façade-backed keyringKeychain / keyringKeypair
+// stores against the real login Keychain on THIS machine, proving the re-point
+// onto github.com/go-keyring/keyring preserves the pre-re-point behaviour (add,
+// overwrite, read back, miss reports ok=false, delete is idempotent) — the same
+// parity the direct go-macos/keychain binding provided. Unique per-run
+// service/account values keep them clear of any real credential. The token and
+// keypair items are plain generic passwords (no access control), so no Touch ID
+// prompt is raised and the tests run unattended.
 
 func uniqueSuffix() string { return fmt.Sprintf("%d", time.Now().UnixNano()) }
 
-func TestSecKeychainRoundTrip(t *testing.T) {
+func TestKeychainStoreRoundTripOnDevice(t *testing.T) {
 	store := defaultKeychain()
 	svc := "weft-app-test-" + uniqueSuffix()
 	acct := "issuer-" + uniqueSuffix()
@@ -59,9 +62,11 @@ func TestSecKeychainRoundTrip(t *testing.T) {
 	if err := store.Delete(svc, acct); err != nil {
 		t.Fatalf("Delete of absent item = %v, want nil", err)
 	}
+	t.Log("on-device: keyring-backed token store round-trip verified " +
+		"(add-or-overwrite, miss->ok=false, idempotent delete)")
 }
 
-func TestSecKeypairRoundTrip(t *testing.T) {
+func TestKeypairStoreRoundTripOnDevice(t *testing.T) {
 	store := defaultKeypairStore()
 	svc := KeypairKeychainService + "-test-" + uniqueSuffix()
 	acct := "cluster-" + uniqueSuffix()
@@ -92,4 +97,5 @@ func TestSecKeypairRoundTrip(t *testing.T) {
 	if _, ok, _ := store.Get(svc, acct); ok {
 		t.Fatalf("post-delete Get ok = true, want false")
 	}
+	t.Log("on-device: keyring-backed ed25519 keypair store round-trip verified")
 }

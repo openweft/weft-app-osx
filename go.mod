@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	fyne.io/systray v1.11.0
-	github.com/go-macos/keychain v0.1.0
+	github.com/go-keyring/keyring v0.2.0
 	github.com/openweft/weft-app-core v0.1.0
 	github.com/webview/webview_go v0.0.0-20240831120633-6173450d4dd6
 	golang.org/x/term v0.43.0
@@ -17,9 +17,12 @@ require (
 exclude golang.zx2c4.com/wireguard/tun/netstack v0.0.0-20220703234212-c31a7b1ab478
 
 require (
+	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/ebitengine/purego v0.10.2 // indirect
+	github.com/go-freedesktop/secretservice v0.1.0 // indirect
+	github.com/go-macos/keychain v0.1.0 // indirect
 	github.com/go-macos/objc v0.1.1 // indirect
-	github.com/godbus/dbus/v5 v5.1.0 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
