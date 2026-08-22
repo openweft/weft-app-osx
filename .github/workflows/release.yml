@@ -21,6 +21,13 @@ jobs:
   package:
     name: Weft.app (macOS)
     runs-on: macos-latest
+    # The secrets context is not available in a step `if`, so surface the
+    # signing secrets as job-level env and test those instead. Without this
+    # the workflow does not parse at all, and never runs.
+    env:
+      AC_API_KEY: ${{ secrets.AC_API_KEY }}
+      MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+      MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -37,7 +44,7 @@ jobs:
       # Code-sign the .app BEFORE imaging, only when signing secrets exist
       # (forks / untrusted builds still get an unsigned, openable app).
       - name: Codesign Weft.app
-        if: ${{ secrets.MACOS_CERT_P12 != '' }}
+        if: env.MACOS_CERT_P12 != ''
         env:
           MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
@@ -53,7 +60,7 @@ jobs:
 
       # Notarize + staple the DMG so Gatekeeper lets users drag-n-drop it.
       - name: Notarize + staple DMG
-        if: ${{ secrets.AC_API_KEY != '' }}
+        if: env.AC_API_KEY != ''
         env:
           AC_API_KEY: ${{ secrets.AC_API_KEY }}
         run: |
